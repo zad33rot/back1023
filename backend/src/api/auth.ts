@@ -3,6 +3,9 @@ import type { Request, Response } from "express"
 import prisma from "../db";
 import bcrypt from "bcrypt"
 import { hashPass } from "../utils/hash"
+import jwt from "jsonwebtoken"
+import { text } from "node:stream/consumers";
+import { myMiddleware } from "./middleware/authenticationGuard";
 
 interface RegisterBody {
     username?: string;
@@ -40,16 +43,27 @@ router.post("/login", async function(req: Request<{}, {}, LoginBody>, res: Respo
         if(!isValid) {
             throw new Error("Invaliv email or password.")
         }
-            
-        const { password: _, ...userWithoutPassword } = user;
-        res.status(200).json({ text: userWithoutPassword })
+        const token = jwt.sign({
+            exp: "3d",
+            data: user,
+        }, 'secret')
+
+        // const { password: _, ...userWithoutPassword } = user;
+        res.status(200).json({ text: token })
     }
     catch(error) {
         res.status(400).json({ error })
     }
 });
-router.post("/logout", async function(req: Request, res: Response) {
-    res.status(200).json({ text: "Done!" })
+
+router.post("/logout", myMiddleware, async function(req: Request, res: Response) {
+    try {
+        // const token = req.headers["authorization"]?.split(" ")[1]; // bearer fdrfu6figtf57rfi
+        res.status(200).json({ text: "Done!" })
+    }
+    catch(error) {
+        res.status(400).json({ error })
+    }
 });
 
 router.post(
@@ -92,3 +106,5 @@ router.post(
         res.status(400).json({ error })
     }
 })
+
+// /me
