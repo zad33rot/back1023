@@ -1,11 +1,11 @@
 import express, { Router } from "express"
 import type { Request, Response } from "express"
-import prisma from "../db";
+import {prisma} from "../db";
 import bcrypt from "bcrypt"
 import { hashPass } from "../utils/hash"
 import jwt from "jsonwebtoken"
 import { text } from "node:stream/consumers";
-import { myMiddleware } from "./middleware/authenticationGuard";
+import { myMiddleware } from "../middleware/authenticationGuard";
 
 interface RegisterBody {
     username?: string;
@@ -70,6 +70,8 @@ router.post(
     "/register",
     async function (req: Request<{}, {}, RegisterBody>, res: Response) {
         try {
+            console.log(req.body);
+            
             const { username, email, password } = req.body;
             if (!email || !password || !username) {
                 throw new Error("Email, password and username are required.");
@@ -107,4 +109,5 @@ router.post(
     }
 })
 
+export default router
 // /me
