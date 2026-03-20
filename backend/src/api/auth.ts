@@ -6,6 +6,7 @@ import { hashPass } from "../utils/hash"
 import jwt from "jsonwebtoken"
 import { myMiddleware } from "../middleware/authenticationGuard";
 import "dotenv/config";
+import { error } from "node:console";
 
 const SECRET_KEY = `${process.env.SECRET_KEY}`;
 
@@ -46,27 +47,27 @@ router.post("/login", async function(req: Request<{}, {}, LoginBody>, res: Respo
             throw new Error("Invaliv email or password.")
         }
 
-        const refresh_token = jwt.sign({
+        const refreshToken = jwt.sign({
             data: {id: user.id},
         }, SECRET_KEY, {expiresIn: "1d"})
 
-        const acces_token = jwt.sign({
+        const accesToken = jwt.sign({
             data: {id: user.id },
-        }, refresh_token, {expiresIn: "1m"})
+        }, SECRET_KEY, {expiresIn: "1m"})
 
         await prisma.user.update({
             where: { id: user.id },
-            data: { refreshToken: refresh_token },
+            data: { refreshToken: refreshToken },
         });
         
-        res.cookie("refresh_token", acces_token, {
+        res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
             maxAge: 5 * 60 * 60 * 1000,
             secure: false,
             sameSite: "lax"
         })
 
-        res.status(200).json({ token1: acces_token })
+        res.status(200).json({ accesToken: accesToken })
         
     }
     catch(error) {
