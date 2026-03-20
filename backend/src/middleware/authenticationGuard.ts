@@ -1,20 +1,22 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from "jsonwebtoken"
-import { LoginBody } from '../types/AuthRequest.types';
+import { AuthorizedRequest } from '../types/AuthRequest.types';
+import "dotenv/config";
 
+const SECRET_KEY = `${process.env.SECRET_KEY}`;
 
-export function myMiddleware(req: Request<{}, {}, LoginBody>, res: Response, next: NextFunction){
+export function myMiddleware(req: AuthorizedRequest, res: Response, next: NextFunction){
 
     const token = req.headers["authorization"]?.split(" ")[1]; // bearer fdrfu6figtf57rfi
     if (!token) throw new Error()
     try {
-        const decoded = jwt.verify(token, 'secret');
+        const decoded = jwt.verify(token, SECRET_KEY);
         console.log(decoded);
         
-        req.body.user_id = decoded as string;
+        req.user_id = (decoded as any).data;
         next()
     }
     catch(error) {
-        return res.status(403).json(error)
+        return res.status(403).json({ error: "Invalid token" })
     }
 }

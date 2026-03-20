@@ -4,8 +4,10 @@ import {prisma} from "../db";
 import bcrypt from "bcrypt"
 import { hashPass } from "../utils/hash"
 import jwt from "jsonwebtoken"
-import { text } from "node:stream/consumers";
 import { myMiddleware } from "../middleware/authenticationGuard";
+import "dotenv/config";
+
+const SECRET_KEY = `${process.env.SECRET_KEY}`;
 
 interface RegisterBody {
     username?: string;
@@ -23,7 +25,7 @@ const router = express.Router();
 
 router.post("/login", async function(req: Request<{}, {}, LoginBody>, res: Response) {
     try {
-
+        
         const { email, password } = req.body;
     
         if(!email || !password) {
@@ -43,15 +45,32 @@ router.post("/login", async function(req: Request<{}, {}, LoginBody>, res: Respo
         if(!isValid) {
             throw new Error("Invaliv email or password.")
         }
-        const token = jwt.sign({
-            exp: "3d",
-            data: user,
-        }, 'secret')
 
-        // const { password: _, ...userWithoutPassword } = user;
-        res.status(200).json({ text: token })
+        const refresh_token = jwt.sign({
+            data: {id: user.id},
+        }, SECRET_KEY, {expiresIn: "1d"})
+
+        const acces_token = jwt.sign({
+            data: {id: user.id },
+        }, refresh_token, {expiresIn: "1m"})
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { refreshToken: refresh_token },
+        });
+        
+        res.cookie("refresh_token", acces_token, {
+            httpOnly: true,
+            maxAge: 5 * 60 * 60 * 1000,
+            secure: false,
+            sameSite: "lax"
+        })
+
+        res.status(200).json({ token1: acces_token })
+        
     }
     catch(error) {
+        console.log(error)
         res.status(400).json({ error })
     }
 });
@@ -59,10 +78,49 @@ router.post("/login", async function(req: Request<{}, {}, LoginBody>, res: Respo
 router.post("/logout", myMiddleware, async function(req: Request, res: Response) {
     try {
         // const token = req.headers["authorization"]?.split(" ")[1]; // bearer fdrfu6figtf57rfi
-        res.status(200).json({ text: "Done!" })
+        const refreshToken = req.cookies.refreshToken;
+        if (refreshToken) {
+            await prisma.user.updateMany({
+                where: { refreshToken: refreshToken },
+                data: { refreshToken: null },
+            });
+            }
+        res.clearCookie("refreshToken");
+        res.status(200).json({ text: "Пока!" });
     }
     catch(error) {
         res.status(400).json({ error })
+    }
+});
+
+router.post("/refresh", async function(req: Request, res: Response) {
+    try {
+        const refreshToken = req.cookies.refreshToken;
+        console.log(refreshToken)
+        if (!refreshToken) {
+            return res.status(401).json({ error: "Нет рефреш токена" });
+        }
+
+        let decoded;
+        try {
+            decoded = jwt.verify(refreshToken, SECRET_KEY);
+        } catch (err) {
+            return res.status(403).json({ error: "Ошибка рефреш токена" });
+        }
+
+        const user = await prisma.user.findFirst({
+            where: { refreshToken: refreshToken },
+        });
+        if (!user) {
+            return res.status(403).json({ error: "Рефреш токен не найден" });
+        }
+
+        const newAccessToken = jwt.sign({ data: {id: user.id} }, SECRET_KEY, { expiresIn: "15m" });
+
+        res.json({ text: newAccessToken });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ error });
     }
 });
 
@@ -98,13 +156,15 @@ router.post(
             const hashedPass = await hashPass(password);
 
 
-            const newUser = prisma.user.create({
+            const newUser = await prisma.user.create({
                 data: { username, email, password: hashedPass },
             });
 
             res.status(200).json({ user: newUser })
         }
     catch(error) {
+        console.log(error);
+        
         res.status(400).json({ error })
     }
 })
