@@ -2,6 +2,7 @@ import express, { Router } from "express"
 import type { Request, Response } from "express"
 import {prisma} from "../db";
 import { myMiddleware } from '../middleware/authenticationGuard';
+import { AuthorizedRequest } from "../types/AuthRequest.types";
 
 interface CreatePostBody {
     title?: string,
@@ -43,13 +44,13 @@ router.post('/post', myMiddleware, async (req: Request<{}, {}, CreatePostBody>, 
     }
 
 
-    const authorId = (req as any).user?.id;
+    const authorId = (req as AuthorizedRequest).user_id;
         if (!authorId) {
             return res.status(401).json({ error: 'Пользователь не авторизован' });
         }
 
         const newPost = await prisma.post.create({
-            data: { title, content, authorId },
+            data: { title, content, authorId: Number(authorId) },
             include: {
                 author: { select: { id: true, username: true, email: true } }
             }
@@ -70,7 +71,7 @@ router.put('/post/:id', myMiddleware, async (req: Request<{ id: string }, {}, Cr
       return res.status(400).json({ error: 'Нет заголовка' });
     }
 
-    const authorId = (req as any).user?.id;
+    const authorId = (req as AuthorizedRequest).user_id;
     if (!authorId) {
       return res.status(401).json({ error: 'Пользователь не авторизован' });
     }
@@ -83,7 +84,7 @@ router.put('/post/:id', myMiddleware, async (req: Request<{ id: string }, {}, Cr
       return res.status(404).json({ error: 'Пост не найден' });
     }
 
-    if (existingPost.authorId !== authorId) {
+    if (existingPost.authorId !== Number(authorId)) {
       return res.status(403).json({ error: 'Нет прав на редактирование этого поста' });
     }
 
@@ -105,7 +106,7 @@ router.put('/post/:id', myMiddleware, async (req: Request<{ id: string }, {}, Cr
 router.delete('/post/:id', myMiddleware, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const postId = parseInt(req.params.id);
-    const authorId = (req as any).user?.id;
+    const authorId = (req as AuthorizedRequest).user_id;
 
     if (!authorId) {
       return res.status(401).json({ error: 'Пользователь не авторизован' });
@@ -119,7 +120,7 @@ router.delete('/post/:id', myMiddleware, async (req: Request<{ id: string }>, re
       return res.status(404).json({ error: 'Пост не найден' });
     }
 
-    if (existingPost.authorId !== authorId) {
+    if (existingPost.authorId !== Number(authorId)) {
       return res.status(403).json({ error: 'Нет прав на удаление этого поста' });
     }
 

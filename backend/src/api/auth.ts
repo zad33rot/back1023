@@ -18,6 +18,7 @@ interface RegisterBody {
 interface LoginBody {
     email?: string,
     password?: string,
+    refreshToken: string
 }
 
 
@@ -50,23 +51,23 @@ router.post("/login", async function(req: Request<{}, {}, LoginBody>, res: Respo
             data: {id: user.id},
         }, SECRET_KEY, {expiresIn: "1d"})
 
-        const acces_token = jwt.sign({
+        const access_token = jwt.sign({
             data: {id: user.id },
-        }, refresh_token, {expiresIn: "1m"})
+        }, refresh_token, {expiresIn: "15s"})
 
         await prisma.user.update({
             where: { id: user.id },
             data: { refreshToken: refresh_token },
         });
         
-        res.cookie("refresh_token", acces_token, {
+        res.cookie("refreshToken", refresh_token, {
             httpOnly: true,
             maxAge: 5 * 60 * 60 * 1000,
             secure: false,
             sameSite: "lax"
         })
 
-        res.status(200).json({ token1: acces_token })
+        res.status(200).json({ accessToken: access_token })
         
     }
     catch(error) {
@@ -75,7 +76,7 @@ router.post("/login", async function(req: Request<{}, {}, LoginBody>, res: Respo
     }
 });
 
-router.post("/logout", myMiddleware, async function(req: Request, res: Response) {
+router.post("/logout", async function(req: Request, res: Response) {
     try {
         // const token = req.headers["authorization"]?.split(" ")[1]; // bearer fdrfu6figtf57rfi
         const refreshToken = req.cookies.refreshToken;
@@ -85,7 +86,12 @@ router.post("/logout", myMiddleware, async function(req: Request, res: Response)
                 data: { refreshToken: null },
             });
             }
-        res.clearCookie("refreshToken");
+        res.clearCookie("refreshToken", {
+            httpOnly: true,
+            secure: false,
+            sameSite: 'lax',
+            maxAge: 0
+        });
         res.status(200).json({ text: "Пока!" });
     }
     catch(error) {
@@ -93,10 +99,9 @@ router.post("/logout", myMiddleware, async function(req: Request, res: Response)
     }
 });
 
-router.post("/refresh", async function(req: Request, res: Response) {
+router.post("/refresh", async function(req: Request<{}, {}, LoginBody>, res: Response) {
     try {
         const refreshToken = req.cookies.refreshToken;
-        console.log(refreshToken)
         if (!refreshToken) {
             return res.status(401).json({ error: "Нет рефреш токена" });
         }
@@ -115,9 +120,9 @@ router.post("/refresh", async function(req: Request, res: Response) {
             return res.status(403).json({ error: "Рефреш токен не найден" });
         }
 
-        const newAccessToken = jwt.sign({ data: {id: user.id} }, SECRET_KEY, { expiresIn: "15m" });
+        const newAccessToken = jwt.sign({ data: {id: user.id} }, SECRET_KEY, { expiresIn: "10s" });
 
-        res.json({ text: newAccessToken });
+        res.json({ accessToken: newAccessToken });
     } catch (error) {
         console.log(error);
         res.status(500).json({ error });
@@ -128,7 +133,7 @@ router.post(
     "/register",
     async function (req: Request<{}, {}, RegisterBody>, res: Response) {
         try {
-            console.log(req.body);
+            // console.log(req.body);
             
             const { username, email, password } = req.body;
             if (!email || !password || !username) {
