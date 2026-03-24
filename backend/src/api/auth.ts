@@ -1,10 +1,10 @@
 import express, { Router } from "express"
 import type { Request, Response } from "express"
+import { registerUser, loginUser, logOutUser, refresh } from "../services/authService";
 import {prisma} from "../db";
-import bcrypt from "bcrypt"
-import { hashPass } from "../utils/hash"
 import jwt from "jsonwebtoken"
 import { myMiddleware } from "../middleware/authenticationGuard";
+import { AuthorizedRequest } from "../types/AuthRequest.types";
 import "dotenv/config";
 
 const SECRET_KEY = `${process.env.SECRET_KEY}`;
@@ -26,56 +26,26 @@ const router = express.Router();
 
 router.post("/login", async function(req: Request<{}, {}, LoginBody>, res: Response) {
     try {
-        
-        const { email, password } = req.body;
-    
-        if(!email || !password) {
-            throw new Error("Email, password are required.")
-        }
-    
-        const user = await prisma.user.findFirst({
-            where: {
-                email: email,
-            },
-        })
-        if(!user) {
-            throw new Error("Invalid email or password.")
-        }
-    
-        const isValid = await bcrypt.compare(password, user.password)
-        if(!isValid) {
-            throw new Error("Invaliv email or password.")
+        const email = req.body.email;
+        const password = req.body.password;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: "Заполните email и пароль" });
         }
 
-        const refresh_token = jwt.sign({
-            data: {id: user.id},
-        }, SECRET_KEY, {expiresIn: "1d"})
+        // Вызываем функцию логина из сервиса
+        const result = await loginUser(email, password);
 
-        const access_token = jwt.sign({
-            data: {id: user.id },
-        }, SECRET_KEY, {expiresIn: "15s"})
-
-        await prisma.session.create({
-            data: {
-                userId: user.id,
-                refreshToken: refresh_token,
-                device: req.headers['user-agent']
-            }
-        })
-        
-        res.cookie("refreshToken", refresh_token, {
+        res.cookie("refreshToken", result.refreshToken, {
             httpOnly: true,
-            maxAge: 5 * 60 * 60 * 1000,
+            maxAge: 30 * 24 * 60 * 60 * 1000,
             secure: false,
-            sameSite: "lax"
-        })
+            sameSite: "lax",
+        });
 
-        res.status(200).json({ accessToken: access_token })
-        
-    }
-    catch(error) {
-        console.log(error)
-        res.status(400).json({ error })
+        res.status(200).json({ accessToken: result.accessToken });
+    } catch (error) {
+        res.status(400).json({ error });
     }
 });
 
@@ -83,11 +53,7 @@ router.post("/logout", async function(req: Request, res: Response) {
     try {
         // const token = req.headers["authorization"]?.split(" ")[1]; // bearer fdrfu6figtf57rfi
         const refreshToken = req.cookies.refreshToken;
-        if (refreshToken) {
-            await prisma.session.deleteMany({
-                where: { refreshToken: refreshToken },
-            });
-            }
+        if (refreshToken) { await logOutUser(refreshToken)}
         res.clearCookie("refreshToken", {
             httpOnly: true,
             secure: false,
@@ -108,69 +74,51 @@ router.post("/refresh", async function(req: Request<{}, {}, LoginBody>, res: Res
             return res.status(401).json({ error: "Нет рефреш токена" });
         }
 
-        const session = await prisma.session.findUnique({
-            where: {refreshToken: refreshToken}
-        })
 
-        if (!session) {
-            return res.status(403).json({ error: 'сессия не найдена'})
-        }
 
-        jwt.verify(refreshToken, SECRET_KEY)
+        const newAccessToken = await refresh(refreshToken)
 
-        const newAccessToken = jwt.sign({ data: {id: session.userId} }, SECRET_KEY, { expiresIn: "10s" });
-
-        res.json({ accessToken: newAccessToken });
+        res.status(200).json({ accessToken: newAccessToken });
     } catch (error) {
-        console.log(error);
         res.status(500).json({ error });
     }
 });
 
-router.post(
-    "/register",
-    async function (req: Request<{}, {}, RegisterBody>, res: Response) {
+router.post("/register", async function (req: Request<{}, {}, RegisterBody>, res: Response) {
         try {
-            // console.log(req.body);
-            
-            const { username, email, password } = req.body;
-            if (!email || !password || !username) {
-                throw new Error("Email, password and username are required.");
-            }
-            const existingUserEmail = await prisma.user.findFirst({
-                where: {
-                email: email,
-                },
-            })
+        // Достаем данные из запроса по-простому
+        const username = req.body.username;
+        const email = req.body.email;
+        const password = req.body.password;
 
-            const exictingUserName = await prisma.user.findFirst({
-                where: {
-                username: username,
-                },
-            })
-
-            if (existingUserEmail) {
-                throw new Error("This email address is already registered.")
-            }
-
-            if (exictingUserName) {
-                throw new Error("This username is already registered.")
-            }
-            const hashedPass = await hashPass(password);
-
-
-            const newUser = await prisma.user.create({
-                data: { username, email, password: hashedPass },
-            });
-
-            res.status(200).json({ user: newUser })
+        if (!username || !email || !password) {
+            return res.status(400).json({ error: "Заполните все поля" });
         }
-    catch(error) {
-        console.log(error);
-        
-        res.status(400).json({ error })
+
+        // Вызываем нашу функцию из сервиса
+        const newUser = await registerUser(username, email, password);
+
+        // Отвечаем фронтенду
+        res.status(201).json({ message: "Успешно зарегистрировались!", user: newUser });
+    } catch (error: any) {
+        // Если в сервисе сработал throw new Error, ошибка попадет сюда
+        res.status(400).json({ error: error.message });
     }
 })
 
 export default router
-// /me
+
+router.get("/me", myMiddleware, async function(req: AuthorizedRequest, res: Response) {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { id: Number(req.user_id) },
+            select: { id: true, username: true, email: true }
+        });
+
+        if (!user) return res.status(404).json({ error: "Пользователь не найден" });
+        
+        res.status(200).json(user);
+    } catch (error) {
+        res.status(500).json({ error });
+    }
+});
