@@ -53,12 +53,15 @@ router.post("/login", async function(req: Request<{}, {}, LoginBody>, res: Respo
 
         const access_token = jwt.sign({
             data: {id: user.id },
-        }, refresh_token, {expiresIn: "15s"})
+        }, SECRET_KEY, {expiresIn: "15s"})
 
-        await prisma.user.update({
-            where: { id: user.id },
-            data: { refreshToken: refresh_token },
-        });
+        await prisma.session.create({
+            data: {
+                userId: user.id,
+                refreshToken: refresh_token,
+                device: req.headers['user-agent']
+            }
+        })
         
         res.cookie("refreshToken", refresh_token, {
             httpOnly: true,
@@ -81,9 +84,8 @@ router.post("/logout", async function(req: Request, res: Response) {
         // const token = req.headers["authorization"]?.split(" ")[1]; // bearer fdrfu6figtf57rfi
         const refreshToken = req.cookies.refreshToken;
         if (refreshToken) {
-            await prisma.user.updateMany({
+            await prisma.session.deleteMany({
                 where: { refreshToken: refreshToken },
-                data: { refreshToken: null },
             });
             }
         res.clearCookie("refreshToken", {
@@ -106,21 +108,17 @@ router.post("/refresh", async function(req: Request<{}, {}, LoginBody>, res: Res
             return res.status(401).json({ error: "Нет рефреш токена" });
         }
 
-        let decoded;
-        try {
-            decoded = jwt.verify(refreshToken, SECRET_KEY);
-        } catch (err) {
-            return res.status(403).json({ error: "Ошибка рефреш токена" });
+        const session = await prisma.session.findUnique({
+            where: {refreshToken: refreshToken}
+        })
+
+        if (!session) {
+            return res.status(403).json({ error: 'сессия не найдена'})
         }
 
-        const user = await prisma.user.findFirst({
-            where: { refreshToken: refreshToken },
-        });
-        if (!user) {
-            return res.status(403).json({ error: "Рефреш токен не найден" });
-        }
+        jwt.verify(refreshToken, SECRET_KEY)
 
-        const newAccessToken = jwt.sign({ data: {id: user.id} }, SECRET_KEY, { expiresIn: "10s" });
+        const newAccessToken = jwt.sign({ data: {id: session.userId} }, SECRET_KEY, { expiresIn: "10s" });
 
         res.json({ accessToken: newAccessToken });
     } catch (error) {
