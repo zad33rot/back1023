@@ -1,7 +1,7 @@
 // src/pages/HomePage.jsx
 import React, { useState } from 'react';
-import PostList from '../components/PostList';
-import CreatePost from '../components/CreatePost';
+import PostList from '../components/post/PostList';
+import CreatePost from '../components/post/CreatePost';
 
 function HomePage({ isLoggedIn }) {
   // Состояние для обновления списка после создания поста

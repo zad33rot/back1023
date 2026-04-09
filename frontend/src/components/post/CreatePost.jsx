@@ -1,6 +1,6 @@
 // src/components/CreatePost.jsx
 import React, { useState } from 'react';
-import { fetchWithAuth } from '../utils/refreshAccesToken.jsx'
+import { fetchWithAuth } from '../../utils/refreshAccesToken.jsx'
 
 function CreatePost({ onPostCreated }) {
   const [title, setTitle] = useState('');

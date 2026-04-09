@@ -55,7 +55,7 @@ export async function loginUser(email: string, password: string) {
         { expiresIn: "30d" });
 
     const accessToken = jwt.sign({ 
-        data: { id: user.id } }, 
+        data: { id: user.id, username: user.username } }, 
         refreshToken, 
         { expiresIn: "10s" 
             

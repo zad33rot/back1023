@@ -33,7 +33,6 @@ router.post("/login", async function(req: Request<{}, {}, LoginBody>, res: Respo
             return res.status(400).json({ error: "Заполните email и пароль" });
         }
 
-        // Вызываем функцию логина из сервиса
         const result = await loginUser(email, password);
 
         res.cookie("refreshToken", result.refreshToken, {
@@ -86,7 +85,6 @@ router.post("/refresh", async function(req: Request<{}, {}, LoginBody>, res: Res
 
 router.post("/register", async function (req: Request<{}, {}, RegisterBody>, res: Response) {
         try {
-        // Достаем данные из запроса по-простому
         const username = req.body.username;
         const email = req.body.email;
         const password = req.body.password;
@@ -95,18 +93,14 @@ router.post("/register", async function (req: Request<{}, {}, RegisterBody>, res
             return res.status(400).json({ error: "Заполните все поля" });
         }
 
-        // Вызываем нашу функцию из сервиса
         const newUser = await registerUser(username, email, password);
 
-        // Отвечаем фронтенду
         res.status(201).json({ message: "Успешно зарегистрировались!", user: newUser });
     } catch (error: any) {
-        // Если в сервисе сработал throw new Error, ошибка попадет сюда
         res.status(400).json({ error: error.message });
     }
 })
 
-export default router
 
 router.get("/me", myMiddleware, async function(req: AuthorizedRequest, res: Response) {
     try {
@@ -122,3 +116,4 @@ router.get("/me", myMiddleware, async function(req: AuthorizedRequest, res: Resp
         res.status(500).json({ error });
     }
 });
+export default router

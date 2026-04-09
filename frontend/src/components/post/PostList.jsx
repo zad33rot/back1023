@@ -1,6 +1,6 @@
 // src/components/PostList.jsx
 import React, { useState, useEffect } from 'react';
-import { fetchWithAuth } from '../utils/refreshAccesToken.jsx'
+import { fetchWithAuth } from '../../utils/refreshAccesToken.jsx'
 
 function PostList() {
   const [posts, setPosts] = useState([]);

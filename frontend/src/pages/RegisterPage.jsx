@@ -1,7 +1,7 @@
 // src/pages/RegisterPage.jsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import Register from '../components/Register';
+import Register from '../components/auth/Register';
 
 function RegisterPage() {
   const navigate = useNavigate();

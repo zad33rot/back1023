@@ -6,12 +6,12 @@ function Login({ onLogin }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e) => {
+const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
     try {
-      const res = await fetch('/api/auth/login', { // или '/api/auth/login' с прокси
+      const res = await fetch('/api/auth/login', { 
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -19,14 +19,21 @@ function Login({ onLogin }) {
       });
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Ошибка входа');
-      }
+      if (!res.ok) throw new Error(data.error || 'Ошибка входа');
 
       localStorage.setItem('accessToken', data.accessToken);
+      
       const decoded = jwtDecode(data.accessToken);
-      localStorage.setItem('userId', decoded.data.id);
-      onLogin();
+      
+      const userData = decoded.data || decoded;
+      
+      localStorage.setItem('userId', userData.id);
+
+      const realUsername = userData.username || email.split('@')[0];
+      
+      localStorage.setItem('username', realUsername);
+      onLogin(realUsername); 
+
     } catch (err) {
       setError(err.message);
     }
@@ -34,7 +41,7 @@ function Login({ onLogin }) {
 
   return (
     <div className="form-container">
-      {error && <p className="error-message">{error}</p>}
+      {error && <p className="error-message" style={{ color: 'red', fontWeight: 'bold' }}>{error}</p>}
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label>Email:</label>
