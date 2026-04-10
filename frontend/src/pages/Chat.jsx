@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useChatSocket } from '../utils/useChatSocket';
+import { useChatSocket } from '../utils/useChatSocket.jsx';
 import './Chat.css';
 
 export default function ChatPage() {
@@ -8,7 +8,6 @@ export default function ChatPage() {
   const [users, setUsers] = useState([]);
   const [activeUser, setActiveUser] = useState(null);
   const [text, setText] = useState('');
-
   const { status, messages, connect, sendMessage } = useChatSocket(backendUrl);
   const endRef = useRef(null);
 
