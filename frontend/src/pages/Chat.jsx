@@ -4,13 +4,9 @@ import './Chat.css';
 
 export default function ChatPage() {
   const backendUrl = 'http://localhost:3000';
-  
   const [myNickname] = useState(localStorage.getItem('username') || '');
-  
   const [users, setUsers] = useState([]);
-  
   const [activeUser, setActiveUser] = useState(null);
-  
   const [text, setText] = useState('');
 
   const { status, messages, connect, sendMessage } = useChatSocket(backendUrl);
@@ -23,7 +19,7 @@ export default function ChatPage() {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const res = await fetch('http://127.0.0.1:3000/api/users');
+        const res = await fetch('http://localhost:3000/api/users');
         if (res.ok) {
           const data = await res.json();
           setUsers(data.map(u => u.username)); 
@@ -37,13 +33,10 @@ export default function ChatPage() {
 
   const openChatWith = (friendNickname) => {
     setActiveUser(friendNickname); 
-    
     const privateRoomName = [myNickname, friendNickname].sort().join('_');
-    
     connect({ room: privateRoomName, nickname: myNickname });
   };
 
-  // Отправка сообщения
   const handleSend = (e) => {
     e.preventDefault();
     if (!text.trim()) return;
@@ -61,18 +54,13 @@ export default function ChatPage() {
 
   return (
     <div className="messenger-container">
-      
       <div className="messenger-sidebar">
-        <div className="sidebar-header">
-          Контакты
-        </div>
+        <div className="sidebar-header">Контакты</div>
         <ul className="user-list">
           {otherUsers.map((user) => (
             <li 
               key={user} 
-              // Если этот пользователь выбран, вешаем на него CSS-класс 'active', чтобы подсветить
               className={`user-item ${activeUser === user ? 'active' : ''}`}
-              // По клику открываем чат с ним
               onClick={() => openChatWith(user)}
             >
               {user}
@@ -82,20 +70,16 @@ export default function ChatPage() {
       </div>
 
       <div className="messenger-chat-area">
-        
         {!activeUser ? (
-          <div className="empty-chat">
-            Выберите пользователя слева, чтобы начать общение
-          </div>
+          <div className="empty-chat">Выберите пользователя, чтобы начать общение</div>
         ) : (
           <>
             <div className="chat-header">
               <span><b>{activeUser}</b></span>
-              
               {status !== 'connected' ? (
-                <span style={{ fontSize: '12px', color: 'red' }}>Твоя сеть отключена</span>
+                <span className="status-offline">Твоя сеть отключена</span>
               ) : (
-                <span style={{ fontSize: '12px', color: isFriendOnline ? 'green' : '#999' }}>
+                <span className={isFriendOnline ? "status-online" : "status-last-seen"}>
                   {isFriendOnline ? 'В сети' : 'Был(а) недавно'}
                 </span>
               )}
@@ -103,25 +87,15 @@ export default function ChatPage() {
 
             <div className="chat-messages">
               {messages.map((m) => (
-                <div key={m.id} style={{ marginBottom: '12px' }}>
+                <div key={m.id} className="msg-wrapper">
                   {m.kind === 'system' ? (
-                    <div className="msg-system" style={{ textAlign: 'center', color: '#999', fontSize: '12px' }}>{m.text}</div>
+                    <div className="msg-system">{m.text}</div>
                   ) : (
                     <div style={{ textAlign: m.author === myNickname ? 'right' : 'left' }}>
-                      <div style={{ 
-                        display: 'inline-block', 
-                        padding: '10px 15px', 
-                        borderRadius: '12px',
-                        background: m.author === myNickname ? '#e6f7ff' : '#f1f5f9',
-                        border: m.author === myNickname ? '1px solid #bae0ff' : '1px solid #e2e8f0',
-                        maxWidth: '70%',
-                        textAlign: 'left'
-                      }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '12px', marginBottom: '4px', color: '#555' }}>
-                          {m.author}
-                        </div>
+                      <div className={`msg-bubble ${m.author === myNickname ? 'msg-mine' : 'msg-other'}`}>
+                        <div className="msg-author">{m.author}</div>
                         <div>{m.text}</div>
-                        <div style={{ fontSize: '10px', color: '#aaa', marginTop: '5px', textAlign: 'right' }}>
+                        <div className="msg-time">
                           {new Date(m.createdAt).toLocaleTimeString()}
                         </div>
                       </div>
@@ -137,7 +111,7 @@ export default function ChatPage() {
                 className="chat-input" 
                 value={text} 
                 onChange={e => setText(e.target.value)} 
-                placeholder={`Написать сообщение...`} 
+                placeholder="Написать сообщение..." 
                 disabled={status !== 'connected'} 
               />
               <button type="submit" className="btn-send" disabled={status !== 'connected' || !text.trim()}>
@@ -146,7 +120,6 @@ export default function ChatPage() {
             </form>
           </>
         )}
-
       </div>
     </div>
   );
