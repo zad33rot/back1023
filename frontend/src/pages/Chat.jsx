@@ -8,8 +8,15 @@ export default function ChatPage() {
   const [users, setUsers] = useState([]);
   const [activeUser, setActiveUser] = useState(null);
   const [text, setText] = useState('');
-  const { status, messages, connect, sendMessage } = useChatSocket(backendUrl);
+  
+  const { status, messages, connect, sendMessage, fetchHistory, disconnect } = useChatSocket(backendUrl);
   const endRef = useRef(null);
+
+  // Подключаемся 1 раз при входе
+  useEffect(() => {
+    if (myNickname) connect({ nickname: myNickname });
+    return () => disconnect();
+  }, [myNickname, connect, disconnect]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -19,13 +26,8 @@ export default function ChatPage() {
     const fetchUsers = async () => {
       try {
         const res = await fetch('http://localhost:3000/api/users');
-        if (res.ok) {
-          const data = await res.json();
-          setUsers(data.map(u => u.username)); 
-        }
-      } catch (error) {
-        console.error('Ошибка загрузки пользователей:', error);
-      }
+        if (res.ok) setUsers((await res.json()).map(u => u.username)); 
+      } catch (e) { console.error(e); }
     };
     fetchUsers();
   }, []);
@@ -33,36 +35,68 @@ export default function ChatPage() {
   const openChatWith = (friendNickname) => {
     setActiveUser(friendNickname); 
     const privateRoomName = [myNickname, friendNickname].sort().join('_');
-    connect({ room: privateRoomName, nickname: myNickname });
+    fetchHistory(privateRoomName);
   };
 
   const handleSend = (e) => {
     e.preventDefault();
-    if (!text.trim()) return;
-    sendMessage(text.trim());
+    if (!text.trim() || !activeUser) return;
+    const privateRoomName = [myNickname, activeUser].sort().join('_');
+    sendMessage(text.trim(), privateRoomName);
     setText('');
   };
 
+  const currentRoom = activeUser ? [myNickname, activeUser].sort().join('_') : null;
+  const currentMessages = messages.filter(m => m.room === currentRoom || m.room === 'global');
+
+  const lastSystemMsg = [...currentMessages].reverse().find(m => m.kind === 'system' && m.text.includes(activeUser));
+  const isFriendOnline = lastSystemMsg && lastSystemMsg.text.includes('вошел');
+
+  // ========================================================
+  // МАГИЯ UI: Делаем контакты "Умными" и реагирующими на сообщения
+  // ========================================================
   const otherUsers = users.filter(u => u !== myNickname);
-
-  const lastSystemMsg = [...messages]
-    .reverse() 
-    .find(m => m.kind === 'system' && m.text.includes(activeUser));
-
-  const isFriendOnline = lastSystemMsg && lastSystemMsg.text.includes('присоединился');
+  
+  const smartContacts = otherUsers.map(user => {
+    const roomName = [myNickname, user].sort().join('_');
+    // Ищем сообщения с этим пользователем в нашем глобальном пуле
+    const userMsgs = messages.filter(m => m.room === roomName && m.kind === 'user');
+    const lastMsg = userMsgs.length > 0 ? userMsgs[userMsgs.length - 1] : null;
+    
+    return {
+      name: user,
+      lastMsgTime: lastMsg ? lastMsg.createdAt : 0, // Время последнего сообщения
+      // Считаем сообщение непрочитанным, если оно пришло от друга, а мы сейчас в другом чате
+      hasUnread: lastMsg && lastMsg.author === user && activeUser !== user
+    };
+  }).sort((a, b) => b.lastMsgTime - a.lastMsgTime); // Сортируем: свежие диалоги прыгают наверх!
+  // ========================================================
 
   return (
     <div className="messenger-container">
       <div className="messenger-sidebar">
         <div className="sidebar-header">Контакты</div>
         <ul className="user-list">
-          {otherUsers.map((user) => (
+          {smartContacts.map((contact) => (
             <li 
-              key={user} 
-              className={`user-item ${activeUser === user ? 'active' : ''}`}
-              onClick={() => openChatWith(user)}
+              key={contact.name} 
+              className={`user-item ${activeUser === contact.name ? 'active' : ''}`} 
+              onClick={() => openChatWith(contact.name)}
             >
-              {user}
+              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                <span>{contact.name}</span>
+                
+                {/* Индикатор нового сообщения */}
+                {contact.hasUnread && (
+                  <span style={{
+                    background: '#e74c3c', color: 'white', fontSize: '10px', 
+                    padding: '3px 7px', borderRadius: '10px', fontWeight: 'bold',
+                    boxShadow: '0 2px 4px rgba(231, 76, 60, 0.3)'
+                  }}>
+                    Новое
+                  </span>
+                )}
+              </div>
             </li>
           ))}
         </ul>
@@ -75,28 +109,19 @@ export default function ChatPage() {
           <>
             <div className="chat-header">
               <span><b>{activeUser}</b></span>
-              {status !== 'connected' ? (
-                <span className="status-offline">Твоя сеть отключена</span>
-              ) : (
-                <span className={isFriendOnline ? "status-online" : "status-last-seen"}>
-                  {isFriendOnline ? 'В сети' : 'Был(а) недавно'}
-                </span>
-              )}
+              {status !== 'connected' ? <span className="status-offline">Отключено</span> : 
+              <span className={isFriendOnline ? "status-online" : "status-last-seen"}>{isFriendOnline ? 'В сети' : 'Офлайн'}</span>}
             </div>
 
             <div className="chat-messages">
-              {messages.map((m) => (
+              {currentMessages.map((m) => (
                 <div key={m.id} className="msg-wrapper">
-                  {m.kind === 'system' ? (
-                    <div className="msg-system">{m.text}</div>
-                  ) : (
+                  {m.kind === 'system' ? <div className="msg-system">{m.text}</div> : (
                     <div style={{ textAlign: m.author === myNickname ? 'right' : 'left' }}>
                       <div className={`msg-bubble ${m.author === myNickname ? 'msg-mine' : 'msg-other'}`}>
                         <div className="msg-author">{m.author}</div>
                         <div>{m.text}</div>
-                        <div className="msg-time">
-                          {new Date(m.createdAt).toLocaleTimeString()}
-                        </div>
+                        <div className="msg-time">{new Date(m.createdAt).toLocaleTimeString()}</div>
                       </div>
                     </div>
                   )}
@@ -106,16 +131,8 @@ export default function ChatPage() {
             </div>
 
             <form className="chat-composer" onSubmit={handleSend}>
-              <input 
-                className="chat-input" 
-                value={text} 
-                onChange={e => setText(e.target.value)} 
-                placeholder="Написать сообщение..." 
-                disabled={status !== 'connected'} 
-              />
-              <button type="submit" className="btn-send" disabled={status !== 'connected' || !text.trim()}>
-                Отправить
-              </button>
+              <input className="chat-input" value={text} onChange={e => setText(e.target.value)} placeholder="Написать..." disabled={status !== 'connected'} />
+              <button type="submit" className="btn-send" disabled={status !== 'connected' || !text.trim()}>Отправить</button>
             </form>
           </>
         )}

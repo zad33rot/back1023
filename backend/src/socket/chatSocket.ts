@@ -1,58 +1,83 @@
 import type { Server, Socket } from 'socket.io';
-import { DEFAULT_ROOM } from './chatTypes';
-import type { ChatJoinAck, ChatJoinPayload, ChatSendAck, ChatSendPayload, SocketChatData } from './chatTypes';
+import { createDhServerHandshake, encryptText, decryptText } from './chatCrypto';
 import { addSystemMessage, addUserMessage, getRoomHistory } from './chatService';
+import type { SocketChatData } from './chatTypes';
 
 export function registerChatHandlers(io: Server) {
   io.on('connection', (socket: Socket) => {
     const socketData = socket.data as SocketChatData;
-    if (!socketData.room) socketData.room = DEFAULT_ROOM;
 
-    socket.on('chat:join', async (payload: ChatJoinPayload, callback: (ack: ChatJoinAck) => void) => {
+    socket.on('chat:join', async (payload: any, callback: any) => {
       try {
-        const room = payload?.room?.toString?.() ?? '';
-        const nickname = payload?.nickname?.toString?.() ?? '';
+        const { nickname, clientPublicKey } = payload || {};
+        if (!nickname || !clientPublicKey) return callback({ ok: false, error: 'Заполни данные' });
 
-        if (!room.trim() || !nickname.trim()) return callback({ ok: false, error: 'Заполни все поля' });
-
-        if (socketData.room && socketData.room !== room) socket.leave(socketData.room);
-
-        socketData.room = room;
+        const handshake = createDhServerHandshake(clientPublicKey);
         socketData.nickname = nickname;
-        socket.join(room);
+        socketData.sharedKey = handshake.sharedKey;
+        
+        socket.join(nickname);
 
-        const history = await getRoomHistory(room);
-        socket.emit('chat:history', history);
+        callback({ ok: true, serverPublicKey: handshake.serverPublicKey });
 
-        const systemMessage = await addSystemMessage({ room, text: `${nickname} присоединился(лась)` });
-        io.to(room).emit('chat:message', systemMessage);
-
-        callback({ ok: true });
+        const sysMsg = await addSystemMessage({ room: 'global', text: `${nickname} вошел(ла) в сеть` });
+        io.emit('chat:message', sysMsg); 
       } catch (e) {
-        callback({ ok: false, error: 'Ошибка входа' });
+        callback({ ok: false, error: 'Ошибка установки защищенного канала' });
       }
     });
 
-    socket.on('chat:message', async (payload: ChatSendPayload, callback: (ack: ChatSendAck) => void) => {
+    socket.on('chat:get_history', async (payload: any, callback: any) => {
+      if (!socketData.sharedKey || !socketData.nickname) return;
       try {
-        const room = payload?.room?.toString?.() ?? '';
-        const text = payload?.text?.toString?.() ?? '';
-
-        if (!socketData.nickname) return callback({ ok: false, error: 'Сначала выполните join' });
-
-        const message = await addUserMessage({ room, nickname: socketData.nickname, text });
-        io.to(room).emit('chat:message', message);
-        
-        callback({ ok: true });
+        const history = await getRoomHistory(payload.room);
+        const encryptedHistory = history.map(m => ({
+          ...m,
+          text: m.kind === 'user' ? encryptText(m.text, socketData.sharedKey!) : m.text
+        }));
+        callback({ ok: true, history: encryptedHistory });
       } catch (e) {
-        callback({ ok: false, error: e instanceof Error ? e.message : 'Ошибка' });
+        callback({ ok: false, error: 'Ошибка загрузки истории' });
+      }
+    });
+
+    socket.on('chat:message', async (payload: any, callback: any) => {
+      if (!socketData.sharedKey || !socketData.nickname) return callback?.({ ok: false });
+      
+      try {
+        const { room, encrypted } = payload; 
+        const decryptedText = decryptText(encrypted, socketData.sharedKey);
+        
+        const message = await addUserMessage({ 
+          room: String(room),
+          nickname: socketData.nickname, 
+          text: decryptedText 
+        });
+
+        const participants: string[] = String(room).split('_'); 
+        
+        participants.forEach((p: string) => {
+          const socketIds = io.sockets.adapter.rooms.get(p); 
+          if (socketIds) {
+            socketIds.forEach((id: string) => {
+              const s = io.sockets.sockets.get(id);
+              const key = (s?.data as SocketChatData)?.sharedKey;
+              if (key) {
+                s?.emit('chat:message', { ...message, text: encryptText(decryptedText, key) });
+              }
+            });
+          }
+        });
+        callback?.({ ok: true });
+      } catch (e) {
+        callback?.({ ok: false, error: 'Ошибка отправки сообщения' });
       }
     });
 
     socket.on('disconnect', async () => {
-      if (socketData.room && socketData.nickname) {
-        const systemMessage = await addSystemMessage({ room: socketData.room, text: `${socketData.nickname} вышел(ла)` });
-        io.to(socketData.room).emit('chat:message', systemMessage);
+      if (socketData.nickname) {
+        const sysMsg = await addSystemMessage({ room: 'global', text: `${socketData.nickname} вышел(ла)` });
+        io.emit('chat:message', sysMsg);
       }
     });
   });
